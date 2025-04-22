@@ -1,6 +1,6 @@
 package furhatos.app.hopev1.flow.main
 
-import furhatos.app.hopev1.api.ApiClient
+import furhatos.app.hopev1.api.VoiceApi
 import furhatos.app.hopev1.audio.AudioRecorder
 import furhatos.app.hopev1.flow.Parent
 import furhatos.flow.kotlin.*
@@ -11,11 +11,11 @@ import kotlin.concurrent.thread
 import furhatos.event.Event
 import java.io.File
 
-// Custom event for API response
-class ApiResponseEvent(val response: String) : Event()
+// Custom event for Voice API response
+class VoiceApiResponseEvent(val response: String) : Event()
 
-// Create a single instance of the API client and AudioRecorder
-private val apiClient = ApiClient()
+// Create a single instance of the Voice API and AudioRecorder
+private val voiceApi = VoiceApi()
 private val audioRecorder = AudioRecorder()
 private var currentAudioFile: File? = null
 private var isListening = false
@@ -34,32 +34,38 @@ val Greeting: State = state(Parent) {
     // This will trigger when the user says something
     onResponse {
         // Stop recording as soon as we get a response
+        val audioFile = currentAudioFile
         audioRecorder.stopRecording()
         isListening = false
 
         val userMessage = it.text
 
-        // Only process if there's actual text content
-        if (userMessage.isNotBlank()) {
+        // Only process if there's actual text content and we have an audio file
+        if (userMessage.isNotBlank() && audioFile != null && audioFile.exists()) {
             // Show thinking state
             furhat.gesture(Gestures.Thoughtful)
 
-            // Send user message to Python backend in a separate thread
+            // Send user voice data to Python backend in a separate thread
             thread {
-                val response = apiClient.sendMessage(userMessage)
+                val response = voiceApi.sendVoiceData(audioFile, userMessage)
                 // Use an event to send the response back to the main thread
-                send(ApiResponseEvent(response))
+                send(VoiceApiResponseEvent(response))
             }
         } else {
-            // Empty response, just continue listening
+            // Error handling if no audio file is available
+            if (audioFile == null || !audioFile.exists()) {
+                furhat.say("I'm sorry, there was an issue with the audio recording.")
+            }
+
+            // Start a new recording session
             currentAudioFile = audioRecorder.startRecording()
             isListening = true
             furhat.listen()
         }
     }
 
-    // Handle the API response event
-    onEvent<ApiResponseEvent> {
+    // Handle the Voice API response event
+    onEvent<VoiceApiResponseEvent> {
         furhat.say(it.response)
 
         // Start a new recording session after the response
