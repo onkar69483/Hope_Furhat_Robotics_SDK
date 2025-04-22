@@ -11,6 +11,9 @@ import org.json.JSONObject
 private const val API_URL = "http://localhost:5000/api/voice_emotion"
 
 class VoiceApi {
+    // Variable to store the session ID between requests
+    private var currentSessionId: String? = null
+
     /**
      * Sends the recorded audio file and user text to the voice emotion API endpoint
      *
@@ -39,6 +42,15 @@ class VoiceApi {
             writer.appendLine("Content-Disposition: form-data; name=\"text\"")
             writer.appendLine()
             writer.appendLine(text)
+
+            // Add session_id if we have one from previous response
+            currentSessionId?.let { sessionId ->
+                writer.appendLine("--$boundary")
+                writer.appendLine("Content-Disposition: form-data; name=\"session_id\"")
+                writer.appendLine()
+                writer.appendLine(sessionId)
+                println("Sending request with session_id: $sessionId") // Terminal print
+            }
 
             // Add the file
             writer.appendLine("--$boundary")
@@ -76,15 +88,26 @@ class VoiceApi {
                 }
                 bufferedReader.close()
 
-                // Parse JSON response and return just the response text
+                // Parse JSON response
                 val jsonResponse = JSONObject(response.toString())
                 val responseText = jsonResponse.getString("response_text")
 
+                // Update session_id from response if present
+                if (jsonResponse.has("session_id")) {
+                    currentSessionId = jsonResponse.getString("session_id")
+                    println("Received new session_id: $currentSessionId") // Terminal print
+                }
+
+                // Print the full response to terminal
+                println("API Response: $jsonResponse")
+
                 return responseText
             } else {
+                println("Error: HTTP response code $responseCode") // Terminal print
                 return "Error: HTTP response code $responseCode"
             }
         } catch (e: Exception) {
+            println("Error connecting to voice emotion API: ${e.message}") // Terminal print
             return "Error connecting to voice emotion API: ${e.message}"
         }
     }
