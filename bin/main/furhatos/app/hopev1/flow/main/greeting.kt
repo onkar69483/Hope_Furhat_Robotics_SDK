@@ -1,6 +1,7 @@
 package furhatos.app.hopev1.flow.main
 
 import furhatos.app.hopev1.api.ApiClient
+import furhatos.app.hopev1.audio.AudioRecorder
 import furhatos.app.hopev1.flow.Parent
 import furhatos.flow.kotlin.*
 import furhatos.nlu.common.No
@@ -8,30 +9,40 @@ import furhatos.nlu.common.Yes
 import furhatos.gestures.Gestures
 import kotlin.concurrent.thread
 import furhatos.event.Event
+import java.io.File
 
 // Custom event for API response
 class ApiResponseEvent(val response: String) : Event()
 
-// Create a single instance of the API client
+// Create a single instance of the API client and AudioRecorder
 private val apiClient = ApiClient()
+private val audioRecorder = AudioRecorder()
+private var currentAudioFile: File? = null
+private var isListening = false
 
 val Greeting: State = state(Parent) {
     onEntry {
-        // Instead of asking, just inform the user and start listening
+        // Inform the user and start listening
         furhat.say("I'm ready. Just speak to me whenever you need something.")
-        // Start listening without immediately expecting a response
+
+        // Start a new recording session
+        currentAudioFile = audioRecorder.startRecording()
+        isListening = true
         furhat.listen()
     }
 
-    // This will trigger only when the user actually says something
+    // This will trigger when the user says something
     onResponse {
+        // Stop recording as soon as we get a response
+        audioRecorder.stopRecording()
+        isListening = false
+
         val userMessage = it.text
 
         // Only process if there's actual text content
         if (userMessage.isNotBlank()) {
-            // Show thinking state using a predefined gesture
+            // Show thinking state
             furhat.gesture(Gestures.Thoughtful)
-//            furhat.say("Let me think about that...")
 
             // Send user message to Python backend in a separate thread
             thread {
@@ -40,7 +51,9 @@ val Greeting: State = state(Parent) {
                 send(ApiResponseEvent(response))
             }
         } else {
-            // If somehow we got an empty response, just continue listening
+            // Empty response, just continue listening
+            currentAudioFile = audioRecorder.startRecording()
+            isListening = true
             furhat.listen()
         }
     }
@@ -48,23 +61,51 @@ val Greeting: State = state(Parent) {
     // Handle the API response event
     onEvent<ApiResponseEvent> {
         furhat.say(it.response)
-        // Instead of asking a follow-up question, just start listening again
+
+        // Start a new recording session after the response
+        currentAudioFile = audioRecorder.startRecording()
+        isListening = true
         furhat.listen()
     }
 
-    // These specific responses can stay, but we'll also resume listening after them
     onResponse<Yes> {
+        // We already stopped recording in the main onResponse handler
         furhat.say("I'm listening, what would you like to know?")
+
+        // Start a new recording session
+        currentAudioFile = audioRecorder.startRecording()
+        isListening = true
         furhat.listen()
     }
 
     onResponse<No> {
+        // We already stopped recording in the main onResponse handler
         furhat.say("Alright, I'm still here if you need anything.")
+
+        // Start a new recording session
+        currentAudioFile = audioRecorder.startRecording()
+        isListening = true
         furhat.listen()
     }
 
-    // Handle silence - just keep listening without saying anything
+    // Handle silence - if no response is detected
     onNoResponse {
+        // Only restart if there was no speech detected
+        audioRecorder.stopRecording()
+        isListening = false
+
+        // Start a new recording session
+        currentAudioFile = audioRecorder.startRecording()
+        isListening = true
         furhat.listen()
+    }
+
+    // Clean up when leaving this state
+    onExit {
+        // Ensure recording is stopped when leaving this state
+        if (isListening) {
+            audioRecorder.stopRecording()
+            isListening = false
+        }
     }
 }
