@@ -10,9 +10,15 @@ import furhatos.gestures.Gestures
 import kotlin.concurrent.thread
 import furhatos.event.Event
 import java.io.File
+import org.json.JSONObject
 
-// Custom event for Voice API response
-class VoiceApiResponseEvent(val response: String) : Event()
+// Custom event for Voice API response with all emotion data
+class VoiceApiResponseEvent(
+    val responseText: String,
+    val faceEmotion: String,
+    val voiceEmotion: String,
+    val textSentiment: JSONObject
+) : Event()
 
 // Create a single instance of the Voice API and AudioRecorder
 private val voiceApi = VoiceApi()
@@ -36,6 +42,11 @@ val Greeting: State = state(Parent) {
         // Stop recording as soon as we get a response
         val audioFile = currentAudioFile
         audioRecorder.stopRecording()
+
+        // Get the timing information
+        val startTime = audioRecorder.getStartTime()
+        val endTime = audioRecorder.getEndTime()
+
         isListening = false
 
         val userMessage = it.text
@@ -47,9 +58,28 @@ val Greeting: State = state(Parent) {
 
             // Send user voice data to Python backend in a separate thread
             thread {
-                val response = voiceApi.sendVoiceData(audioFile, userMessage)
-                // Use an event to send the response back to the main thread
-                send(VoiceApiResponseEvent(response))
+                val apiResponse = voiceApi.sendVoiceData(audioFile, userMessage, startTime, endTime)
+                try {
+                    val jsonResponse = JSONObject(apiResponse)
+
+                    // Extract all the data we need
+                    val responseText = jsonResponse.getString("response_text")
+                    val faceEmotion = jsonResponse.getString("face_emotion")
+                    val voiceEmotion = jsonResponse.getString("voice_emotion")
+                    val textSentiment = jsonResponse.getJSONObject("text_sentiment")
+
+                    // Send all the data back to the main thread
+                    send(VoiceApiResponseEvent(responseText, faceEmotion, voiceEmotion, textSentiment))
+                } catch (e: Exception) {
+                    // Fallback in case of parsing error
+                    println("Error parsing API response: ${e.message}")
+                    send(VoiceApiResponseEvent(
+                        "I'm sorry, there was an error processing your request.",
+                        "unknown",
+                        "unknown",
+                        JSONObject("{\"sentiment\":\"unknown\",\"emotion\":\"unknown\"}")
+                    ))
+                }
             }
         } else {
             // Error handling if no audio file is available
@@ -66,7 +96,16 @@ val Greeting: State = state(Parent) {
 
     // Handle the Voice API response event
     onEvent<VoiceApiResponseEvent> {
-        furhat.say(it.response)
+        // Make the robot speak only the response text
+        furhat.say(it.responseText)
+
+        // Print all the emotion data to the web interface
+        println("=== EMOTION ANALYSIS ===")
+        println("Face Emotion: ${it.faceEmotion}")
+        println("Voice Emotion: ${it.voiceEmotion}")
+        println("Text Sentiment: ${it.textSentiment.getString("sentiment")}")
+        println("Text Emotion: ${it.textSentiment.getString("emotion")}")
+        println("=======================")
 
         // Start a new recording session after the response
         currentAudioFile = audioRecorder.startRecording()

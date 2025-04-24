@@ -28,6 +28,10 @@ class AudioRecorder {
     private var lastAudioTime = 0L
     private var recordingStarted = false
 
+    // Timing variables
+    private var startTime = 0.0
+    private var endTime = 0.0
+
     /**
      * Starts recording audio with voice activity detection
      * @return The File where the audio will be saved
@@ -46,6 +50,10 @@ class AudioRecorder {
             isRecording = true
             recordingStarted = false
             lastAudioTime = System.currentTimeMillis()
+
+            // Reset timing variables
+            startTime = 0.0
+            endTime = 0.0
 
             // Create a temporary audio buffer
             val audioBuffer = ByteArrayOutputStream()
@@ -127,6 +135,8 @@ class AudioRecorder {
             if (!recordingStarted) {
                 println("Speech detected, starting to record")
                 recordingStarted = true
+                // Record the start time when speech is first detected
+                startTime = System.currentTimeMillis() / 1000.0
             }
 
             // Store audio data
@@ -141,6 +151,8 @@ class AudioRecorder {
             val silenceDuration = System.currentTimeMillis() - lastAudioTime
             if (silenceDuration > silenceDurationToStop) {
                 println("Silence detected for $silenceDuration ms, stopping recording")
+                // Record the end time when stopping due to silence
+                endTime = System.currentTimeMillis() / 1000.0
                 isRecording = false
             }
         }
@@ -173,6 +185,11 @@ class AudioRecorder {
             if (!isRecording) return
 
             println("Stopping audio recording...")
+            // If end time wasn't already set by silence detection
+            if (endTime == 0.0 && recordingStarted) {
+                endTime = System.currentTimeMillis() / 1000.0
+            }
+
             isRecording = false
 
             targetDataLine?.apply {
@@ -204,5 +221,19 @@ class AudioRecorder {
      */
     fun getLastAudioTime(): Long {
         return lastAudioTime
+    }
+
+    /**
+     * Gets the start time when speech was first detected
+     */
+    fun getStartTime(): Double {
+        return startTime
+    }
+
+    /**
+     * Gets the end time when recording was stopped
+     */
+    fun getEndTime(): Double {
+        return endTime
     }
 }

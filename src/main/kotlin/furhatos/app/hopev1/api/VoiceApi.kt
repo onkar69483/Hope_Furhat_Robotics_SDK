@@ -19,9 +19,11 @@ class VoiceApi {
      *
      * @param audioFile The WAV file containing the recorded audio
      * @param text The transcribed text from user's speech
+     * @param startTime The timestamp when user started speaking
+     * @param endTime The timestamp when user stopped speaking
      * @return The response text from the API
      */
-    fun sendVoiceData(audioFile: File, text: String): String {
+    fun sendVoiceData(audioFile: File, text: String, startTime: Double, endTime: Double): String {
         try {
             // Boundary for multipart form data
             val boundary = "----WebKitFormBoundary" + System.currentTimeMillis()
@@ -51,6 +53,20 @@ class VoiceApi {
                 writer.appendLine(sessionId)
                 println("Sending request with session_id: $sessionId") // Terminal print
             }
+
+            // Add start_time field
+            writer.appendLine("--$boundary")
+            writer.appendLine("Content-Disposition: form-data; name=\"start_time\"")
+            writer.appendLine()
+            writer.appendLine(startTime.toString())
+            println("Sending start_time: $startTime") // Terminal print
+
+            // Add end_time field
+            writer.appendLine("--$boundary")
+            writer.appendLine("Content-Disposition: form-data; name=\"end_time\"")
+            writer.appendLine()
+            writer.appendLine(endTime.toString())
+            println("Sending end_time: $endTime") // Terminal print
 
             // Add the file
             writer.appendLine("--$boundary")
@@ -101,13 +117,41 @@ class VoiceApi {
                 // Print the full response to terminal
                 println("API Response: $jsonResponse")
 
-                return responseText
+                // Delete the audio file after successful processing
+                if (audioFile.exists()) {
+                    val deleted = audioFile.delete()
+                    if (deleted) {
+                        println("Successfully deleted audio file: ${audioFile.absolutePath}")
+                    } else {
+                        println("Failed to delete audio file: ${audioFile.absolutePath}")
+                    }
+                }
+
+                return response.toString()
             } else {
                 println("Error: HTTP response code $responseCode") // Terminal print
+                // Delete the audio file after successful processing
+                if (audioFile.exists()) {
+                    val deleted = audioFile.delete()
+                    if (deleted) {
+                        println("Successfully deleted audio file: ${audioFile.absolutePath}")
+                    } else {
+                        println("Failed to delete audio file: ${audioFile.absolutePath}")
+                    }
+                }
                 return "Error: HTTP response code $responseCode"
             }
         } catch (e: Exception) {
             println("Error connecting to voice emotion API: ${e.message}") // Terminal print
+            // Delete the audio file after successful processing
+            if (audioFile.exists()) {
+                val deleted = audioFile.delete()
+                if (deleted) {
+                    println("Successfully deleted audio file: ${audioFile.absolutePath}")
+                } else {
+                    println("Failed to delete audio file: ${audioFile.absolutePath}")
+                }
+            }
             return "Error connecting to voice emotion API: ${e.message}"
         }
     }
